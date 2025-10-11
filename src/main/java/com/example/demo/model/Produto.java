@@ -1,9 +1,12 @@
 package com.example.demo.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+
 import jakarta.persistence.*;
 
 @Entity
 @Table(name = "produto")
+@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 public class Produto {
 
     @Id
@@ -23,14 +26,18 @@ public class Produto {
     @Column(name = "perecivel")
     private Boolean perecivel;
 
+    @Column(name = "marca", length = 50) // NOVO CAMPO
+    private String marca;
+
     // Construtores
     public Produto() {}
 
-    public Produto(String nome, String categoria, String unidadeMedida, Boolean perecivel) {
+    public Produto(String nome, String categoria, String unidadeMedida, Boolean perecivel, String marca) {
         this.nome = nome;
         this.categoria = categoria;
         this.unidadeMedida = unidadeMedida;
         this.perecivel = perecivel;
+        this.marca = marca;
     }
 
     // Getters e Setters
@@ -49,6 +56,9 @@ public class Produto {
     public Boolean getPerecivel() { return perecivel; }
     public void setPerecivel(Boolean perecivel) { this.perecivel = perecivel; }
 
+    public String getMarca() { return marca; }
+    public void setMarca(String marca) { this.marca = marca; }
+
     @Override
     public String toString() {
         return "Produto{" +
@@ -57,6 +67,7 @@ public class Produto {
                 ", categoria='" + categoria + '\'' +
                 ", unidadeMedida='" + unidadeMedida + '\'' +
                 ", perecivel=" + perecivel +
+                ", marca='" + marca + '\'' +
                 '}';
     }
 }

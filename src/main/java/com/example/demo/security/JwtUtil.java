@@ -21,7 +21,9 @@ public class JwtUtil {
 
     private final PrivateKey privateKey;
     private final PublicKey publicKey;
-    private static final long EXPIRATION_MS = 3600000L; // 1 hora
+
+    private static final long ACCESS_TOKEN_EXPIRATION_MS = 1000 * 60 * 15;        // 15 minutos
+    private static final long REFRESH_TOKEN_EXPIRATION_MS = 1000L * 60 * 60 * 24 * 7; // 7 dias
 
     public JwtUtil() {
         try {
@@ -36,9 +38,6 @@ public class JwtUtil {
         ClassPathResource resource = new ClassPathResource(resourcePath);
         try (PemReader pemReader = new PemReader(new InputStreamReader(resource.getInputStream(), StandardCharsets.UTF_8))) {
             byte[] content = pemReader.readPemObject().getContent();
-            // PKCS#1 -> RSAPrivateCrtKeySpec
-            // Parse manual dos valores da chave
-            // Para simplificar, vamos usar BouncyCastle para converter em RSAPrivateCrtKeySpec
             org.bouncycastle.asn1.pkcs.RSAPrivateKey rsaPrivateKey = org.bouncycastle.asn1.pkcs.RSAPrivateKey.getInstance(content);
             RSAPrivateCrtKeySpec keySpec = new RSAPrivateCrtKeySpec(
                     rsaPrivateKey.getModulus(),
@@ -65,34 +64,43 @@ public class JwtUtil {
         }
     }
 
-    public String gerarToken(String username) {
+    // ================= GERAR TOKENS =================
+    public String gerarToken(Long userId) {
+        return gerarToken(userId, ACCESS_TOKEN_EXPIRATION_MS);
+    }
+
+    public String gerarRefreshToken(Long userId) {
+        return gerarToken(userId, REFRESH_TOKEN_EXPIRATION_MS);
+    }
+
+    private String gerarToken(Long userId, long expirationMs) {
         Date now = new Date();
-        Date expiryDate = new Date(now.getTime() + EXPIRATION_MS);
+        Date expiryDate = new Date(now.getTime() + expirationMs);
 
         return Jwts.builder()
-                .setSubject(username)
+                .setSubject(String.valueOf(userId)) // salva o ID como subject
                 .setIssuedAt(now)
                 .setExpiration(expiryDate)
                 .signWith(privateKey, SignatureAlgorithm.RS256)
                 .compact();
     }
 
-    public String extrairUsername(String token) {
+    // ================= VALIDAÇÃO =================
+    public boolean validarToken(String token) {
         try {
-            return Jwts.parserBuilder()
+            Jwts.parserBuilder()
                     .setSigningKey(publicKey)
                     .build()
-                    .parseClaimsJws(token)
-                    .getBody()
-                    .getSubject();
+                    .parseClaimsJws(token);
+            return true;
         } catch (JwtException e) {
-            return null;
+            return false;
         }
     }
 
-    public boolean validarToken(String token, String username) {
-        String tokenUsername = extrairUsername(token);
-        return tokenUsername != null && tokenUsername.equals(username) && !isTokenExpirado(token);
+    public boolean validarToken(String token, Long userId) {
+        Long tokenId = extrairId(token);
+        return tokenId != null && tokenId.equals(userId) && !isTokenExpirado(token);
     }
 
     private boolean isTokenExpirado(String token) {
@@ -106,6 +114,21 @@ public class JwtUtil {
             return expiration.before(new Date());
         } catch (JwtException e) {
             return true;
+        }
+    }
+
+    // ================= EXTRAÇÃO =================
+    public Long extrairId(String token) {
+        try {
+            String subject = Jwts.parserBuilder()
+                    .setSigningKey(publicKey)
+                    .build()
+                    .parseClaimsJws(token)
+                    .getBody()
+                    .getSubject();
+            return subject != null ? Long.parseLong(subject) : null;
+        } catch (JwtException e) {
+            return null;
         }
     }
 }

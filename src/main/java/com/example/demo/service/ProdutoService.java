@@ -34,10 +34,6 @@ public class ProdutoService {
         return produtoRepository.findByNome(nome);
     }
 
-    // Buscar produtos por categoria
-    public List<Produto> buscarPorCategoria(String categoria) {
-        return produtoRepository.findByCategoria(categoria);
-    }
 
     // Buscar produtos por nome (contendo o texto)
     public List<Produto> buscarPorNomeContendo(String nome) {

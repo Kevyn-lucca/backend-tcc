@@ -3,68 +3,91 @@ package com.example.demo.Controller;
 import com.example.demo.model.Usuario;
 import com.example.demo.security.JwtUtil;
 import com.example.demo.service.AuthService;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.*;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.web.util.WebUtils;
+import jakarta.servlet.http.HttpServletRequest;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Base64;
 
 @RestController
 @RequestMapping("/api/auth")
-@CrossOrigin(origins = "*")
 public class AuthController {
 
     private final JwtUtil jwtUtil;
-        
-    public AuthController(JwtUtil jwtUtil){
-        this.jwtUtil = jwtUtil;
-    }    
 
     @Autowired
     private AuthService authService;
 
+    @Autowired
+    private com.example.demo.service.InviteTokenService inviteTokenService;
+
+    public AuthController(JwtUtil jwtUtil) {
+        this.jwtUtil = jwtUtil;
+    }
+
+    // -------------------------------
+    // REGISTRAR USUÁRIO
+    // -------------------------------
 @PostMapping("/registrar")
 public ResponseEntity<?> registrarUsuario(@RequestBody RegistroRequest request) {
     try {
-        // Validações básicas
-        if (request.getEmail() == null || request.getEmail().trim().isEmpty()) {
+
+        // --- Validações básicas ---
+        if (request.getEmail() == null || request.getEmail().trim().isEmpty())
             return ResponseEntity.badRequest().body(createErrorResponse("Email é obrigatório"));
-        }
-        
-        if (request.getSenha() == null || request.getSenha().length() < 6) {
+
+        if (request.getSenha() == null || request.getSenha().length() < 6)
             return ResponseEntity.badRequest().body(createErrorResponse("Senha deve ter pelo menos 6 caracteres"));
+
+        if (request.getTokenConvite() == null || request.getTokenConvite().trim().isEmpty())
+            return ResponseEntity.badRequest().body(createErrorResponse("Token de convite é obrigatório"));
+
+
+
+        String token = request.getTokenConvite().trim();
+
+        // --- Valida token em memória ---
+        if (!inviteTokenService.validarToken(token)) {
+            return ResponseEntity.badRequest().body(createErrorResponse("Token de convite inválido ou expirado"));
         }
 
-        // VALIDAÇÕES DOS NOVOS CAMPOS OBRIGATÓRIOS
-        if (request.getPerfil() == null || request.getPerfil().trim().isEmpty()) {
-            return ResponseEntity.badRequest().body(createErrorResponse("Perfil é obrigatório"));
+        // --- Extrai dados do payload do token ---
+        String decoded = new String(Base64.getDecoder().decode(token));
+        // Token gerado como: UUID + ":" + perfil + ":" + idPanificadora + ":" + timestamp
+        String[] parts = decoded.split(":");
+        if (parts.length < 4) {
+            return ResponseEntity.badRequest().body(createErrorResponse("Token de convite inválido"));
         }
-        
-        if (request.getIdPanificadora() == null) {
-            return ResponseEntity.badRequest().body(createErrorResponse("ID da panificadora é obrigatório"));
-        }
+        String perfil = parts[1];
+        Integer idPanificadora = Integer.parseInt(parts[2]);
 
-        // Registrar usuário
+        // --- Cria usuário usando dados do token ---
         Usuario usuario = authService.registrarUsuario(
-            request.getEmail().trim().toLowerCase(),
-            request.getSenha(),
-            request.getNome(),
-            request.getPerfil(),
-            request.getIdPanificadora()
+                request.getEmail().trim().toLowerCase(),
+                request.getSenha(),
+                request.getNome(),
+                perfil,
+                idPanificadora
         );
 
-        // Resposta de sucesso
+        // --- Marca token como usado ---
+        inviteTokenService.tokens.remove(token); // remove do mapa em memória
+
+        // --- Monta resposta ---
         Map<String, Object> response = new HashMap<>();
         response.put("success", true);
         response.put("message", "Usuário registrado com sucesso");
         response.put("usuario", Map.of(
-            "id", usuario.getId(),
-            "email", usuario.getEmail(),
-            "nome", usuario.getNome(),
-            "perfil", usuario.getPerfil(),
-            "idPanificadora", usuario.getIdPanificadora()
+                "id", usuario.getId(),
+                "email", usuario.getEmail(),
+                "nome", usuario.getNome(),
+                "perfil", usuario.getPerfil(),
+                "idPanificadora", usuario.getIdPanificadora()
         ));
 
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
@@ -73,82 +96,127 @@ public ResponseEntity<?> registrarUsuario(@RequestBody RegistroRequest request) 
         return ResponseEntity.badRequest().body(createErrorResponse(e.getMessage()));
     } catch (Exception e) {
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-            .body(createErrorResponse("Erro interno do servidor"));
+                .body(createErrorResponse("Erro interno do servidor"));
     }
 }
-    
 
 
-
-
- @PostMapping("/login")
+    // -------------------------------
+    // LOGIN
+    // -------------------------------
+    @PostMapping("/login")
     public ResponseEntity<?> loginUsuario(@RequestBody LoginRequest request) {
         try {
-            // Validação básica
-            if (request.getEmail() == null || request.getEmail().trim().isEmpty()) {
+            if (request.getEmail() == null || request.getEmail().trim().isEmpty())
                 return ResponseEntity.badRequest().body(createErrorResponse("Email é obrigatório"));
-            }
-            
-            if (request.getSenha() == null || request.getSenha().isEmpty()) {
+            if (request.getSenha() == null || request.getSenha().isEmpty())
                 return ResponseEntity.badRequest().body(createErrorResponse("Senha é obrigatória"));
-            }
 
-            // Autenticar usuário
             Usuario usuario = authService.autenticarUsuario(
-                request.getEmail().trim().toLowerCase(),
-                request.getSenha()
+                    request.getEmail().trim().toLowerCase(),
+                    request.getSenha()
             );
 
-            if (usuario != null) {
-                // Resposta de sucesso
-                Map<String, Object> response = new HashMap<>();
-                response.put("success", true);
-                response.put("message", "Login realizado com sucesso");
-                response.put("usuario", Map.of(
+            if (usuario == null)
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                        .body(createErrorResponse("Email ou senha inválidos"));
+
+            String accessToken = jwtUtil.gerarToken(usuario.getId());
+            String refreshToken = jwtUtil.gerarRefreshToken(usuario.getId());
+
+            ResponseCookie refreshCookie = ResponseCookie.from("refresh_token", refreshToken)
+                    .httpOnly(true)
+                    .secure(true)
+                    .sameSite("Strict")
+                    .path("/")
+                    .maxAge(60 * 60 * 24 * 30)
+                    .build();
+
+            Map<String, Object> body = new HashMap<>();
+            body.put("success", true);
+            body.put("message", "Login realizado com sucesso");
+            body.put("usuario", Map.of(
                     "id", usuario.getId(),
                     "email", usuario.getEmail(),
                     "nome", usuario.getNome(),
-                    "token", jwtUtil.gerarToken(usuario.getNome()) 
-                ));
-                
-                return ResponseEntity.ok(response);
-            } else {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(createErrorResponse("Email ou senha inválidos"));
-            }
+                    "perfil", usuario.getPerfil(),
+                    "idPanificadora", usuario.getIdPanificadora(),
+                    "token", accessToken
+            ));
+
+            return ResponseEntity.ok()
+                    .header(HttpHeaders.SET_COOKIE, refreshCookie.toString())
+                    .body(body);
 
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(createErrorResponse("Erro interno do servidor"));
+                    .body(createErrorResponse("Erro interno do servidor"));
         }
     }
 
-@GetMapping("/verificar-email/{email}")
-    public ResponseEntity<?> verificarEmail(@PathVariable String email) {
+    // -------------------------------
+    // REFRESH TOKEN
+    // -------------------------------
+    @PostMapping("/refresh")
+    public ResponseEntity<?> refreshToken(HttpServletRequest request) {
         try {
-            boolean emailExiste = authService.verificarEmailExistente(email);
-            
-            Map<String, Object> response = new HashMap<>();
-            response.put("email", email);
-            response.put("disponivel", !emailExiste);
-            
-            return ResponseEntity.ok(response);
-            
+            var cookie = WebUtils.getCookie(request, "refresh_token");
+            if (cookie == null)
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                        .body(createErrorResponse("Token de atualização ausente"));
+
+            String refreshToken = cookie.getValue();
+            if (!jwtUtil.validarToken(refreshToken))
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                        .body(createErrorResponse("Refresh token inválido"));
+
+            Long userId = jwtUtil.extrairId(refreshToken);
+            if (userId == null)
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                        .body(createErrorResponse("Falha ao extrair ID do token"));
+
+            String novoAccessToken = jwtUtil.gerarToken(userId);
+
+            return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "token", novoAccessToken
+            ));
+
         } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(createErrorResponse("Erro ao verificar email"));
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(createErrorResponse("Falha ao atualizar token"));
         }
     }
 
-@GetMapping("/health")
-    public ResponseEntity<?> healthCheck() {
-        Map<String, String> response = new HashMap<>();
-        response.put("status", "OK");
-        response.put("service", "Auth Service");
-        return ResponseEntity.ok(response);
+    // -------------------------------
+    // LOGOUT
+    // -------------------------------
+    @PostMapping("/logout")
+    public ResponseEntity<?> logout() {
+        ResponseCookie expiredCookie = ResponseCookie.from("refresh_token", "")
+                .httpOnly(true)
+                .secure(true)
+                .sameSite("Strict")
+                .path("/")
+                .maxAge(0)
+                .build();
+
+        return ResponseEntity.ok()
+                .header(HttpHeaders.SET_COOKIE, expiredCookie.toString())
+                .body(Map.of("success", true, "message", "Logout efetuado"));
     }
 
-    // Método auxiliar para criar respostas de erro
+    // -------------------------------
+    // HEALTH CHECK
+    // -------------------------------
+    @GetMapping("/health")
+    public ResponseEntity<?> healthCheck() {
+        return ResponseEntity.ok(Map.of("status", "OK", "service", "Auth Service"));
+    }
+
+    // -------------------------------
+    // AUXILIARES
+    // -------------------------------
     private Map<String, Object> createErrorResponse(String message) {
         Map<String, Object> errorResponse = new HashMap<>();
         errorResponse.put("success", false);
@@ -156,49 +224,41 @@ public ResponseEntity<?> registrarUsuario(@RequestBody RegistroRequest request) 
         return errorResponse;
     }
 
-    // Classes DTO internas
   public static class RegistroRequest {
     private String email;
     private String senha;
     private String nome;
-    private String perfil;          // NOVO CAMPO OBRIGATÓRIO
-    private Integer idPanificadora; // NOVO CAMPO OBRIGATÓRIO
+    private String perfil;
+    private Integer idPanificadora;
 
-    // Getters e Setters
+    @JsonProperty("inviteToken") // mapeia o JSON "inviteToken" para este campo
+    private String tokenConvite;
+
     public String getEmail() { return email; }
     public void setEmail(String email) { this.email = email; }
-    
+
     public String getSenha() { return senha; }
     public void setSenha(String senha) { this.senha = senha; }
-    
+
     public String getNome() { return nome; }
     public void setNome(String nome) { this.nome = nome; }
-    
+
     public String getPerfil() { return perfil; }
     public void setPerfil(String perfil) { this.perfil = perfil; }
-    
+
     public Integer getIdPanificadora() { return idPanificadora; }
     public void setIdPanificadora(Integer idPanificadora) { this.idPanificadora = idPanificadora; }
+
+    public String getTokenConvite() { return tokenConvite; }
+    public void setTokenConvite(String tokenConvite) { this.tokenConvite = tokenConvite; }
 }
+
     public static class LoginRequest {
         private String email;
         private String senha;
-
-        // Getters e Setters
-        public String getEmail() {
-            return email;
-        }
-
-        public void setEmail(String email) {
-            this.email = email;
-        }
-
-        public String getSenha() {
-            return senha;
-        }
-
-        public void setSenha(String senha) {
-            this.senha = senha;
-        }
+        public String getEmail() { return email; }
+        public void setEmail(String email) { this.email = email; }
+        public String getSenha() { return senha; }
+        public void setSenha(String senha) { this.senha = senha; }
     }
 }

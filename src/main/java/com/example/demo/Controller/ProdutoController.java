@@ -35,10 +35,6 @@ public class ProdutoController {
                 .orElse(ResponseEntity.notFound().build());
     }
 
-    @GetMapping("/categoria/{categoria}")
-    public List<Produto> buscarPorCategoria(@PathVariable String categoria) {
-        return produtoService.buscarPorCategoria(categoria);
-    }
 
     @GetMapping("/buscar")
     public List<Produto> buscarPorNomeContendo(@RequestParam String nome) {
