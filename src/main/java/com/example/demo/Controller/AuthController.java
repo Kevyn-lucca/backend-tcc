@@ -30,14 +30,10 @@ public class AuthController {
         this.jwtUtil = jwtUtil;
     }
 
-    // -------------------------------
-    // REGISTRAR USUÁRIO
-    // -------------------------------
 @PostMapping("/registrar")
 public ResponseEntity<?> registrarUsuario(@RequestBody RegistroRequest request) {
     try {
 
-        // --- Validações básicas ---
         if (request.getEmail() == null || request.getEmail().trim().isEmpty())
             return ResponseEntity.badRequest().body(createErrorResponse("Email é obrigatório"));
 
@@ -51,14 +47,12 @@ public ResponseEntity<?> registrarUsuario(@RequestBody RegistroRequest request) 
 
         String token = request.getTokenConvite().trim();
 
-        // --- Valida token em memória ---
         if (!inviteTokenService.validarToken(token)) {
             return ResponseEntity.badRequest().body(createErrorResponse("Token de convite inválido ou expirado"));
         }
 
-        // --- Extrai dados do payload do token ---
+       
         String decoded = new String(Base64.getDecoder().decode(token));
-        // Token gerado como: UUID + ":" + perfil + ":" + idPanificadora + ":" + timestamp
         String[] parts = decoded.split(":");
         if (parts.length < 4) {
             return ResponseEntity.badRequest().body(createErrorResponse("Token de convite inválido"));
@@ -66,7 +60,6 @@ public ResponseEntity<?> registrarUsuario(@RequestBody RegistroRequest request) 
         String perfil = parts[1];
         Integer idPanificadora = Integer.parseInt(parts[2]);
 
-        // --- Cria usuário usando dados do token ---
         Usuario usuario = authService.registrarUsuario(
                 request.getEmail().trim().toLowerCase(),
                 request.getSenha(),
@@ -75,10 +68,8 @@ public ResponseEntity<?> registrarUsuario(@RequestBody RegistroRequest request) 
                 idPanificadora
         );
 
-        // --- Marca token como usado ---
-        inviteTokenService.tokens.remove(token); // remove do mapa em memória
+        inviteTokenService.tokens.remove(token); 
 
-        // --- Monta resposta ---
         Map<String, Object> response = new HashMap<>();
         response.put("success", true);
         response.put("message", "Usuário registrado com sucesso");
