@@ -78,7 +78,7 @@ public class JwtUtil {
         Date expiryDate = new Date(now.getTime() + expirationMs);
 
         return Jwts.builder()
-                .setSubject(String.valueOf(userId)) // salva o ID como subject
+                .setSubject(String.valueOf(userId)) 
                 .setIssuedAt(now)
                 .setExpiration(expiryDate)
                 .signWith(privateKey, SignatureAlgorithm.RS256)
