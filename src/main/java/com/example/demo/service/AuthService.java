@@ -20,12 +20,10 @@ public class AuthService {
     private PasswordEncoder passwordEncoder;
 
     public Usuario registrarUsuario(String email, String senha, String nome, String perfil, Integer idPanificadora) {
-        // Verificar se email já existe
         if (usuarioRepository.existsByEmail(email.toLowerCase())) {
             throw new IllegalArgumentException("Email já está em uso");
         }
 
-        // Validações dos campos obrigatórios
         if (perfil == null || perfil.trim().isEmpty()) {
             throw new IllegalArgumentException("Perfil é obrigatório");
         }
@@ -34,13 +32,12 @@ public class AuthService {
             throw new IllegalArgumentException("ID da panificadora é obrigatório");
         }
 
-        // Criar novo usuário
         Usuario usuario = new Usuario();
         usuario.setEmail(email.toLowerCase());
         usuario.setSenha(passwordEncoder.encode(senha));
         usuario.setNome(nome != null ? nome.trim() : "");
         usuario.setPerfil(perfil);
-        usuario.setIdPanificadora(idPanificadora); // Supondo que o campo se chama idPanificadora
+        usuario.setIdPanificadora(idPanificadora);
 
         return usuarioRepository.save(usuario);
     }
@@ -51,7 +48,6 @@ public class AuthService {
             
             if (usuarioOpt.isPresent()) {
                 Usuario usuario = usuarioOpt.get();
-                // Verificar se a senha corresponde
                 if (passwordEncoder.matches(senha, usuario.getSenha())) {
                     return usuario;
                 }
