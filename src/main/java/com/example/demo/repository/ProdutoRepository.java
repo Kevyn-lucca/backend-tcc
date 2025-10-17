@@ -12,25 +12,17 @@ import java.util.Optional;
 @Repository
 public interface ProdutoRepository extends JpaRepository<Produto, Long> {
 
-    // Busca produto pelo nome exato
     Optional<Produto> findByNome(String nome);
 
-    // Busca produtos por categoria (contendo, ignorando maiúsculas/minúsculas)
     List<Produto> findByCategoriaContainingIgnoreCase(String categoria);
 
-    // Busca produtos pelo nome parcial (ignore case)
     List<Produto> findByNomeContainingIgnoreCase(String nome);
 
-    // Busca produtos pelo atributo perecível
     List<Produto> findByPerecivel(Boolean perecivel);
 
-    // Verifica se um produto existe pelo nome
     boolean existsByNome(String nome);
 
-    // ================================
-    // Query nativa para trazer produtos junto com estoque (opcional)
-    // Retorna apenas Produto; para mais campos do estoque, precisaria DTO ou Object[]
-    // ================================
+
 @Query(value = "SELECT e.id_estoque, e.id_produto, e.id_panificadora, e.quantidade, e.data_validade, e.status, " +
                "p.id_produto, p.nome, p.categoria, p.unidade_medida, p.perecivel, p.marca " +
                "FROM estoque e " +
