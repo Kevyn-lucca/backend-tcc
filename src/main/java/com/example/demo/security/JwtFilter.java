@@ -33,8 +33,8 @@ public class JwtFilter extends OncePerRequestFilter {
 
         String authHeader = request.getHeader("Authorization");
 
-        if (authHeader != null && authHeader.startsWith("Bearer ")) {
-            String token = authHeader.substring(7); // remove "Bearer "
+        if (authHeader != null && authHeader.startsWith("Bearer")) {
+            String token = authHeader.substring(7); 
 
             try {
                 // Extrai o ID do token
